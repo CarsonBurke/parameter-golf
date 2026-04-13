@@ -5,6 +5,7 @@ Hard stop: To keep readable for newcomers, let's make sure `train_gpt.py` and `t
 """
 
 from __future__ import annotations
+import sys; sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
 
 import copy
 import glob
@@ -86,14 +87,12 @@ class Hyperparameters:
     adam_eps = float(os.environ.get("ADAM_EPS", 1e-8))
     grad_clip_norm = float(os.environ.get("GRAD_CLIP_NORM", 0.0))
     normuon_beta2 = float(os.environ.get("NORMUON_BETA2", 0.95))
-    xsa_last_n = int(os.environ.get("XSA_LAST_N", -1))  # -1 = all layers
 
 # -----------------------------
 # MUON OPTIMIZER (NorMuon variant)
 # -----------------------------
 
 from shared.normuon import NorMuon as Muon, zeropower_via_newtonschulz5  # noqa: E402
-
 
 # -----------------------------
 # TOKENIZER-AGNOSTIC EVALUATION SETUP 
@@ -506,20 +505,6 @@ class CausalSelfAttention(nn.Module):
         self.proj._zero_init = True
         self.q_gain = nn.Parameter(torch.full((num_heads,), qk_gain_init, dtype=torch.float32))
         self.rotary = Rotary(self.head_dim, base=rope_base)
-        self.use_xsa = False
-
-    def _xsa(self, y: Tensor, v: Tensor) -> Tensor:
-        # XSA: subtract self-value projection from attention output.
-        # y: (B, H, T, D), v: (B, Hkv, T, D)
-        # When H == Hkv (no GQA), this is just vector rejection: y - dot(y,vn)*vn
-        # With GQA, expand v to match y's head dim via repeat_interleave.
-        Hkv = v.size(1)
-        if Hkv != y.size(1):
-            v = v.repeat_interleave(y.size(1) // Hkv, dim=1)
-        vn = F.normalize(v, dim=-1)
-        # dot product along head_dim, then project out
-        dot = (y * vn).sum(dim=-1, keepdim=True)
-        return y - dot * vn
 
     def forward(self, x: Tensor) -> Tensor:
         bsz, seqlen, dim = x.shape
@@ -540,8 +525,6 @@ class CausalSelfAttention(nn.Module):
             is_causal=True,
             enable_gqa=(self.num_kv_heads != self.num_heads),
         )
-        if self.use_xsa:
-            y = self._xsa(y, v)
         y = y.transpose(1, 2).contiguous().reshape(bsz, seqlen, dim)
         return self.proj(y)
 
@@ -782,10 +765,6 @@ def main() -> None:
         rope_base=args.rope_base,
         qk_gain_init=args.qk_gain_init,
     ).to(device).bfloat16()
-    # Enable XSA on the last N layers (-1 = all)
-    xsa_n = args.xsa_last_n if args.xsa_last_n >= 0 else args.num_layers
-    for i in range(max(0, args.num_layers - xsa_n), args.num_layers):
-        base_model.blocks[i].attn.use_xsa = True
     for module in base_model.modules():
         if isinstance(module, CastedLinear):
             module.float()

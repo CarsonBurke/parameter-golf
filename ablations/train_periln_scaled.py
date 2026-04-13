@@ -5,6 +5,7 @@ Hard stop: To keep readable for newcomers, let's make sure `train_gpt.py` and `t
 """
 
 from __future__ import annotations
+import sys; sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
 
 import copy
 import glob
@@ -554,19 +555,24 @@ class Block(nn.Module):
     ):
         super().__init__()
         self.attn_norm = RMSNorm()
+        self.attn_post_norm = RMSNorm()
         self.mlp_norm = RMSNorm()
+        self.mlp_post_norm = RMSNorm()
         self.attn = CausalSelfAttention(dim, num_heads, num_kv_heads, rope_base, qk_gain_init)
         self.mlp = MLP(dim, mlp_mult)
         self.attn_scale = nn.Parameter(torch.ones(dim, dtype=torch.float32))
         self.mlp_scale = nn.Parameter(torch.ones(dim, dtype=torch.float32))
+        self.attn_post_scale = nn.Parameter(torch.ones(dim, dtype=torch.float32))
+        self.mlp_post_scale = nn.Parameter(torch.ones(dim, dtype=torch.float32))
         self.resid_mix = nn.Parameter(torch.stack((torch.ones(dim), torch.zeros(dim))).float())
 
     def forward(self, x: Tensor, x0: Tensor) -> Tensor:
         mix = self.resid_mix.to(dtype=x.dtype)
         x = mix[0][None, None, :] * x + mix[1][None, None, :] * x0
-        attn_out = self.attn(self.attn_norm(x))
+        attn_out = self.attn_post_scale.to(dtype=x.dtype)[None, None, :] * self.attn_post_norm(self.attn(self.attn_norm(x)))
         x = x + self.attn_scale.to(dtype=x.dtype)[None, None, :] * attn_out
-        x = x + self.mlp_scale.to(dtype=x.dtype)[None, None, :] * self.mlp(self.mlp_norm(x))
+        mlp_out = self.mlp_post_scale.to(dtype=x.dtype)[None, None, :] * self.mlp_post_norm(self.mlp(self.mlp_norm(x)))
+        x = x + self.mlp_scale.to(dtype=x.dtype)[None, None, :] * mlp_out
         return x
 
 
