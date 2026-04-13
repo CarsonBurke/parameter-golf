@@ -88,6 +88,10 @@ class LiveTBWriter:
                 elif entry["type"] == "train":
                     self.writer.add_scalar("train/loss", entry["train_loss"], entry["step"])
                     self.writer.add_scalar("time/train_loss", entry["train_loss"], time_s)
+                    if self._prev_train_loss is not None:
+                        delta = entry["train_loss"] - self._prev_train_loss
+                        self.writer.add_scalar("train/loss_delta", delta, entry["step"])
+                    self._prev_train_loss = entry["train_loss"]
                     if "step_avg_ms" in entry:
                         self.writer.add_scalar("perf/step_avg_ms", entry["step_avg_ms"], entry["step"])
                 self.writer.flush()
@@ -112,16 +116,27 @@ def run_config(
     script: str = "train_gpt.py",
 ) -> dict:
     """Run a single training config and return parsed results."""
-    # Create result subfolder
+    # Create result subfolder, clean stale data
     run_dir = RESULTS_DIR / name
+    if run_dir.exists():
+        import shutil
+        shutil.rmtree(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
+    tb_run_dir = TB_DIR / name
+    if tb_run_dir.exists():
+        import shutil
+        shutil.rmtree(tb_run_dir)
+    log_file = REPO_ROOT / "logs" / f"{name}.txt"
+    if log_file.exists():
+        log_file.unlink()
 
     env = os.environ.copy()
     env.update({
         "ITERATIONS": str(steps),
         "VAL_LOSS_EVERY": str(val_every),
-        "TRAIN_LOG_EVERY": str(max(1, val_every // 5)),
+        "TRAIN_LOG_EVERY": "10",
         "MAX_WALLCLOCK_SECONDS": "0",
+        "WARMDOWN_ITERS": "0",  # flat LR; warmdown is same for all archs so skip it
         "RUN_ID": name,
     })
     env.update(env_overrides)
