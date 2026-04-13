@@ -5,6 +5,7 @@ Hard stop: To keep readable for newcomers, let's make sure `train_gpt.py` and `t
 """
 
 from __future__ import annotations
+import sys; sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
 
 import copy
 import glob
@@ -554,19 +555,24 @@ class Block(nn.Module):
     ):
         super().__init__()
         self.attn_norm = RMSNorm()
+        self.attn_post_norm = RMSNorm()
         self.mlp_norm = RMSNorm()
+        self.mlp_post_norm = RMSNorm()
         self.attn = CausalSelfAttention(dim, num_heads, num_kv_heads, rope_base, qk_gain_init)
         self.mlp = MLP(dim, mlp_mult)
         self.attn_scale = nn.Parameter(torch.ones(dim, dtype=torch.float32))
         self.mlp_scale = nn.Parameter(torch.ones(dim, dtype=torch.float32))
+        self.attn_post_scale = nn.Parameter(torch.ones(dim, dtype=torch.float32))
+        self.mlp_post_scale = nn.Parameter(torch.ones(dim, dtype=torch.float32))
         self.resid_mix = nn.Parameter(torch.stack((torch.ones(dim), torch.zeros(dim))).float())
 
     def forward(self, x: Tensor, x0: Tensor) -> Tensor:
         mix = self.resid_mix.to(dtype=x.dtype)
         x = mix[0][None, None, :] * x + mix[1][None, None, :] * x0
-        attn_out = self.attn(self.attn_norm(x))
+        attn_out = self.attn_post_scale.to(dtype=x.dtype)[None, None, :] * self.attn_post_norm(self.attn(self.attn_norm(x)))
         x = x + self.attn_scale.to(dtype=x.dtype)[None, None, :] * attn_out
-        x = x + self.mlp_scale.to(dtype=x.dtype)[None, None, :] * self.mlp(self.mlp_norm(x))
+        mlp_out = self.mlp_post_scale.to(dtype=x.dtype)[None, None, :] * self.mlp_post_norm(self.mlp(self.mlp_norm(x)))
+        x = x + self.mlp_scale.to(dtype=x.dtype)[None, None, :] * mlp_out
         return x
 
 
@@ -1054,7 +1060,7 @@ if __name__ == "__main__":
 ====================================================================================================
 Running Python 3.14.3 (main, Feb 18 2026, 14:34:51) [GCC 15.2.1 20260209]
 Running PyTorch 2.11.0
-Sun Apr 12 15:59:51 2026       
+Sun Apr 12 17:05:19 2026       
 +-----------------------------------------------------------------------------------------+
 | NVIDIA-SMI 595.58.03              Driver Version: 595.58.03      CUDA Version: 13.2     |
 +-----------------------------------------+------------------------+----------------------+
@@ -1063,7 +1069,7 @@ Sun Apr 12 15:59:51 2026
 |                                         |                        |               MIG M. |
 |=========================================+========================+======================|
 |   0  NVIDIA GeForce RTX 5090        Off |   00000000:01:00.0  On |                  N/A |
-| 39%   46C    P8             34W /  575W |    4516MiB /  32607MiB |      0%      Default |
+|  0%   39C    P3             46W /  575W |    3980MiB /  32607MiB |      0%      Default |
 |                                         |                        |                  N/A |
 +-----------------------------------------+------------------------+----------------------+
 
@@ -1072,13 +1078,13 @@ Sun Apr 12 15:59:51 2026
 |  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
 |        ID   ID                                                               Usage      |
 |=========================================================================================|
-|    0   N/A  N/A            4186      G   /usr/bin/niri                          1134MiB |
+|    0   N/A  N/A            4186      G   /usr/bin/niri                          1027MiB |
 |    0   N/A  N/A            4318    C+G   /usr/bin/walker                         140MiB |
 |    0   N/A  N/A            4469      G   Xwayland                                  9MiB |
-|    0   N/A  N/A            5806      G   /app/zen/zen                            684MiB |
-|    0   N/A  N/A            6656      G   /usr/lib/vesktop/vesktop                155MiB |
+|    0   N/A  N/A            5806      G   /app/zen/zen                            420MiB |
+|    0   N/A  N/A            6656      G   /usr/lib/vesktop/vesktop                187MiB |
 |    0   N/A  N/A            7987    C+G   missioncenter                            91MiB |
-|    0   N/A  N/A            8849      G   kitty                                   180MiB |
+|    0   N/A  N/A            8849      G   kitty                                   116MiB |
 |    0   N/A  N/A           36162      G   kitty                                    34MiB |
 |    0   N/A  N/A           36567      G   kitty                                    44MiB |
 |    0   N/A  N/A           56268      G   kitty                                    34MiB |
@@ -1093,26 +1099,24 @@ Sun Apr 12 15:59:51 2026
 |    0   N/A  N/A          533379      G   kitty                                    34MiB |
 |    0   N/A  N/A          643185      G   kitty                                    34MiB |
 |    0   N/A  N/A          907999      G   kitty                                    34MiB |
-|    0   N/A  N/A          914786      G   kitty                                    34MiB |
-|    0   N/A  N/A          977666      G   kitty                                    56MiB |
 |    0   N/A  N/A         1004904      G   kitty                                    34MiB |
 |    0   N/A  N/A         1009393      G   kitty                                    34MiB |
 |    0   N/A  N/A         1093605      G   kitty                                    56MiB |
 |    0   N/A  N/A         1109281      G   kitty                                    34MiB |
-|    0   N/A  N/A         1126459      G   kitty                                    56MiB |
-|    0   N/A  N/A         1138729      C   /usr/bin/python3                        498MiB |
+|    0   N/A  N/A         1173677      G   kitty                                    56MiB |
+|    0   N/A  N/A         1202517      C   /usr/bin/python3                        498MiB |
 +-----------------------------------------------------------------------------------------+
 
 ====================================================================================================
 val_bpb:enabled tokenizer_kind=sentencepiece tokenizer_path=./data/tokenizers/fineweb_1024_bpe.model
 train_loader:dataset:fineweb10B_sp1024 train_shards:80
 val_loader:shards pattern=./data/datasets/fineweb10B_sp1024/fineweb_val_*.bin tokens:62021632
-model_params:17059912
+model_params:17069128
 world_size:1 grad_accum_steps:8
 sdp_backends:cudnn=False flash=True mem_efficient=False math=False
 attention_mode:gqa num_heads:8 num_kv_heads:4
 tie_embeddings:True embed_lr:0.05 head_lr:0.0 matrix_lr:0.04 scalar_lr:0.04
-train_batch_tokens:524288 train_seq_len:1024 iterations:2000 warmup_steps:20 max_wallclock_seconds:0.000
+train_batch_tokens:524288 train_seq_len:1024 iterations:200 warmup_steps:20 max_wallclock_seconds:0.000
 seed:1337
 warmup_step:1/20
 warmup_step:2/20
@@ -1134,52 +1138,42 @@ warmup_step:17/20
 warmup_step:18/20
 warmup_step:19/20
 warmup_step:20/20
-step:0/2000 val_loss:6.9357 val_bpb:4.1077 train_time:0ms step_avg:0.01ms
-step:1/2000 train_loss:6.9357 train_time:578ms step_avg:578.08ms
-step:2/2000 train_loss:16.7515 train_time:1166ms step_avg:583.15ms
-step:3/2000 train_loss:8.7596 train_time:1750ms step_avg:583.43ms
-step:4/2000 train_loss:6.5877 train_time:2336ms step_avg:583.95ms
-step:5/2000 train_loss:6.6440 train_time:2926ms step_avg:585.14ms
-step:6/2000 train_loss:6.6921 train_time:3506ms step_avg:584.37ms
-step:7/2000 train_loss:6.3308 train_time:4096ms step_avg:585.13ms
-step:8/2000 train_loss:6.1818 train_time:4678ms step_avg:584.70ms
-step:9/2000 train_loss:6.0860 train_time:5268ms step_avg:585.30ms
-step:10/2000 train_loss:6.0024 train_time:5858ms step_avg:585.76ms
-step:80/2000 train_loss:3.4881 train_time:46935ms step_avg:586.68ms
-step:160/2000 train_loss:2.8755 train_time:93887ms step_avg:586.79ms
-step:240/2000 train_loss:2.7542 train_time:140866ms step_avg:586.94ms
-step:320/2000 train_loss:2.6053 train_time:187800ms step_avg:586.88ms
-step:400/2000 train_loss:2.3880 train_time:234721ms step_avg:586.80ms
-step:400/2000 val_loss:2.5513 val_bpb:1.5110 train_time:234722ms step_avg:586.80ms
-step:480/2000 train_loss:2.4750 train_time:281653ms step_avg:586.78ms
-step:560/2000 train_loss:2.4735 train_time:330596ms step_avg:590.35ms
-step:640/2000 train_loss:2.3749 train_time:378035ms step_avg:590.68ms
-step:720/2000 train_loss:2.3200 train_time:426144ms step_avg:591.87ms
-step:800/2000 train_loss:2.3431 train_time:473261ms step_avg:591.58ms
-step:800/2000 val_loss:2.3749 val_bpb:1.4066 train_time:473261ms step_avg:591.58ms
-step:880/2000 train_loss:2.3345 train_time:520688ms step_avg:591.69ms
-step:960/2000 train_loss:2.3207 train_time:568524ms step_avg:592.21ms
-step:1040/2000 train_loss:2.2565 train_time:615958ms step_avg:592.27ms
-step:1120/2000 train_loss:2.3480 train_time:663165ms step_avg:592.11ms
-step:1200/2000 train_loss:2.2662 train_time:710515ms step_avg:592.10ms
-step:1200/2000 val_loss:2.2759 val_bpb:1.3479 train_time:710515ms step_avg:592.10ms
-step:1280/2000 train_loss:2.1944 train_time:758569ms step_avg:592.63ms
-step:1360/2000 train_loss:2.2868 train_time:805921ms step_avg:592.59ms
-step:1440/2000 train_loss:2.1774 train_time:853502ms step_avg:592.71ms
-step:1520/2000 train_loss:2.2056 train_time:902021ms step_avg:593.43ms
-step:1600/2000 train_loss:2.1797 train_time:949978ms step_avg:593.74ms
-step:1600/2000 val_loss:2.2218 val_bpb:1.3159 train_time:949978ms step_avg:593.74ms
-step:1680/2000 train_loss:2.1990 train_time:998263ms step_avg:594.20ms
-step:1760/2000 train_loss:2.1833 train_time:1046299ms step_avg:594.49ms
-step:1840/2000 train_loss:2.1755 train_time:1093693ms step_avg:594.40ms
-step:1920/2000 train_loss:2.1988 train_time:1141190ms step_avg:594.37ms
-step:2000/2000 train_loss:2.1716 train_time:1189449ms step_avg:594.72ms
-step:2000/2000 val_loss:2.1831 val_bpb:1.2930 train_time:1189449ms step_avg:594.72ms
-peak memory allocated: 10893 MiB reserved: 10912 MiB
-Serialized model: 67224983 bytes
-Code size: 44966 bytes
-Total submission size: 67269949 bytes
-Serialized model int8+zlib: 15080935 bytes (payload:17178912 raw_torch:17224025 payload_ratio:3.91x)
-Total submission size int8+zlib: 15125901 bytes
-final_int8_zlib_roundtrip val_loss:2.1853 val_bpb:1.2942 eval_time:20661ms
-final_int8_zlib_roundtrip_exact val_loss:2.18526736 val_bpb:1.29423842
+step:0/200 val_loss:6.9357 val_bpb:4.1077 train_time:0ms step_avg:0.01ms
+step:1/200 train_loss:6.9357 train_time:626ms step_avg:625.67ms
+step:2/200 train_loss:8.2707 train_time:1242ms step_avg:621.10ms
+step:3/200 train_loss:9.9300 train_time:1834ms step_avg:611.48ms
+step:4/200 train_loss:12.0604 train_time:2452ms step_avg:613.02ms
+step:5/200 train_loss:11.0109 train_time:3064ms step_avg:612.76ms
+step:6/200 train_loss:10.3288 train_time:3667ms step_avg:611.13ms
+step:7/200 train_loss:8.9422 train_time:4278ms step_avg:611.09ms
+step:8/200 train_loss:8.2639 train_time:4898ms step_avg:612.24ms
+step:9/200 train_loss:7.9047 train_time:5493ms step_avg:610.34ms
+step:10/200 train_loss:7.1482 train_time:6110ms step_avg:611.02ms
+step:20/200 train_loss:5.1332 train_time:12324ms step_avg:616.21ms
+step:30/200 train_loss:4.6106 train_time:18547ms step_avg:618.22ms
+step:40/200 train_loss:4.3670 train_time:24618ms step_avg:615.44ms
+step:50/200 train_loss:4.1328 train_time:30686ms step_avg:613.71ms
+step:60/200 train_loss:3.9377 train_time:36707ms step_avg:611.78ms
+step:70/200 train_loss:3.7338 train_time:42753ms step_avg:610.76ms
+step:80/200 train_loss:3.6148 train_time:48943ms step_avg:611.79ms
+step:90/200 train_loss:3.4725 train_time:55048ms step_avg:611.64ms
+step:100/200 train_loss:3.3940 train_time:61077ms step_avg:610.77ms
+step:110/200 train_loss:3.2963 train_time:67215ms step_avg:611.04ms
+step:120/200 train_loss:3.2960 train_time:73278ms step_avg:610.65ms
+step:130/200 train_loss:3.1761 train_time:79389ms step_avg:610.68ms
+step:140/200 train_loss:3.0459 train_time:85465ms step_avg:610.46ms
+step:150/200 train_loss:3.0539 train_time:91583ms step_avg:610.56ms
+step:160/200 train_loss:2.9407 train_time:97677ms step_avg:610.48ms
+step:170/200 train_loss:2.9853 train_time:103772ms step_avg:610.42ms
+step:180/200 train_loss:2.8827 train_time:109853ms step_avg:610.29ms
+step:190/200 train_loss:2.8685 train_time:115956ms step_avg:610.29ms
+step:200/200 train_loss:2.7915 train_time:122333ms step_avg:611.66ms
+step:200/200 val_loss:2.8407 val_bpb:1.6824 train_time:122333ms step_avg:611.66ms
+peak memory allocated: 10778 MiB reserved: 10788 MiB
+Serialized model: 67268339 bytes
+Code size: 45484 bytes
+Total submission size: 67313823 bytes
+Serialized model int8+zlib: 12225618 bytes (payload:17197344 raw_torch:17248245 payload_ratio:3.91x)
+Total submission size int8+zlib: 12271102 bytes
+final_int8_zlib_roundtrip val_loss:2.8419 val_bpb:1.6831 eval_time:20761ms
+final_int8_zlib_roundtrip_exact val_loss:2.84185577 val_bpb:1.68310706
