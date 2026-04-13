@@ -67,6 +67,7 @@ class LiveTBWriter:
         self.writer = SummaryWriter(log_dir=str(TB_DIR / name))
         self.seen_lines = 0
         self._stop = threading.Event()
+        self._prev_train_loss = None
 
     def _poll(self):
         while not self._stop.is_set():

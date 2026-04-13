@@ -32,6 +32,7 @@ def parse_line(line):
 def tail_and_write(log_path: str, name: str):
     writer = SummaryWriter(log_dir=str(TB_DIR / name))
     seen_lines = 0
+    prev_train_loss = None
     print(f"Watching {log_path} -> tb_logs/{name}")
 
     try:
@@ -55,6 +56,9 @@ def tail_and_write(log_path: str, name: str):
                 elif e["type"] == "train":
                     writer.add_scalar("train/loss", e["train_loss"], e["step"])
                     writer.add_scalar("time/train_loss", e["train_loss"], time_s)
+                    if prev_train_loss is not None:
+                        writer.add_scalar("train/loss_delta", e["train_loss"] - prev_train_loss, e["step"])
+                    prev_train_loss = e["train_loss"]
                     if "step_avg_ms" in e:
                         writer.add_scalar("perf/step_avg_ms", e["step_avg_ms"], e["step"])
                 writer.flush()
