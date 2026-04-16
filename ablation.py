@@ -45,17 +45,20 @@ def parse_log_line(line: str) -> dict | None:
             "type": "val",
         }
     train_match = re.match(
-        r"step:(\d+)/\d+\s+train_loss:([\d.]+)\s+train_time:([\d.]+)ms\s+step_avg:([\d.]+)ms",
+        r"step:(\d+)/\d+\s+train_loss:([\d.]+)\s+(?:grad_norm:([\d.]+)\s+)?train_time:([\d.]+)ms\s+step_avg:([\d.]+)ms",
         line,
     )
     if train_match:
-        return {
+        entry = {
             "step": int(train_match.group(1)),
             "train_loss": float(train_match.group(2)),
-            "train_time_ms": float(train_match.group(3)),
-            "step_avg_ms": float(train_match.group(4)),
+            "train_time_ms": float(train_match.group(4)),
+            "step_avg_ms": float(train_match.group(5)),
             "type": "train",
         }
+        if train_match.group(3) is not None:
+            entry["grad_norm"] = float(train_match.group(3))
+        return entry
     return None
 
 
@@ -92,6 +95,8 @@ class LiveTBWriter:
                         delta = entry["train_loss"] - self._prev_train_loss
                         self.writer.add_scalar("train/loss_delta", delta, entry["step"])
                     self._prev_train_loss = entry["train_loss"]
+                    if "grad_norm" in entry:
+                        self.writer.add_scalar("train/grad_norm", entry["grad_norm"], entry["step"])
                     if "step_avg_ms" in entry:
                         self.writer.add_scalar("perf/step_avg_ms", entry["step_avg_ms"], entry["step"])
                 self.writer.flush()
