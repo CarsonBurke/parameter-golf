@@ -273,7 +273,7 @@ def build_sweep(sweep_type: str, steps: int, val_every: int) -> list[tuple[str, 
 def main():
     parser = argparse.ArgumentParser(description="Parameter Golf ablation runner")
     parser.add_argument("--steps", type=int, default=2000, help="Training steps (default: 2000)")
-    parser.add_argument("--val-every", type=int, default=None, help="Validate every N steps (default: steps//5 or 100)")
+    parser.add_argument("--val-every", type=int, default=None, help="Validate every N steps (default: 20)")
     parser.add_argument("--name", type=str, default=None, help="Run name")
     parser.add_argument("--compare", action="store_true", help="Compare existing results")
     parser.add_argument("--sweep", type=str, default=None, help="Run a preset sweep (lr, dim, layers)")
@@ -285,7 +285,7 @@ def main():
         compare_results(RESULTS_DIR)
         return
 
-    val_every = args.val_every or max(args.steps // 5, 50)
+    val_every = args.val_every or 20
     extra_env = {}
     for kv in args.env:
         k, v = kv.split("=", 1)
