@@ -99,8 +99,6 @@ class RawEPSIGRegMetricGPT(base.GPT):
 
     def metric_logits(self, hidden: Tensor) -> Tensor:
         flat_hidden, centers = self.normalized_geometry(hidden)
-        flat_hidden = flat_hidden * self.metric_input_scale
-        centers = centers * self.metric_input_scale
         hidden_sq = flat_hidden.square().sum(dim=-1, keepdim=True)
         center_sq = centers.square().sum(dim=-1).unsqueeze(0)
         dist_sq = (hidden_sq + center_sq) - 2.0 * (flat_hidden @ centers.T)
@@ -121,7 +119,7 @@ class RawEPSIGRegMetricGPT(base.GPT):
         gaussian_cf = torch.exp(-0.5 * t.square()).view(1, -1)
         err = (real - gaussian_cf).square() + imag.square()
         weighted_err = err * gaussian_cf
-        return torch.trapz(weighted_err, t, dim=-1).mean()
+        return torch.trapz(weighted_err, t, dim=-1).mean() * flat.size(0)
 
     def manifold_attract_loss(self, hidden: Tensor, target_ids: Tensor) -> Tensor:
         flat_hidden, centers = self.normalized_geometry(hidden)
