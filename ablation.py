@@ -74,6 +74,34 @@ class LiveTBWriter:
         self._stop = threading.Event()
         self._prev_train_loss = None
 
+    @staticmethod
+    def _extra_scalar_tag(key: str) -> str:
+        lejepa_keys = {
+            "inv_loss",
+            "sigreg_loss",
+            "view_norm",
+            "global_cos",
+            "local_cos",
+            "view_spread",
+            "view_eff_rank",
+            "global_mask_jaccard",
+            "local_mask_jaccard",
+            "global_pooled_cos",
+            "local_pooled_cos",
+            "token_view_eff_rank",
+            "token_view_cos_off_mean",
+            "token_view_dim_std_mean",
+        }
+        if key == "stage_id":
+            return "stage/id"
+        if key.startswith("lejepa_"):
+            return f"lejepa/{key.removeprefix('lejepa_')}"
+        if key in lejepa_keys:
+            return f"lejepa/{key}"
+        if key.startswith("probe_"):
+            return f"probe/{key.removeprefix('probe_')}"
+        return f"train/{key}"
+
     def _poll(self):
         while not self._stop.is_set():
             if not self.log_path.exists():
@@ -100,7 +128,7 @@ class LiveTBWriter:
                     for key, value in entry.items():
                         if key in {"step", "type", "train_loss", "train_time_ms", "step_avg_ms"}:
                             continue
-                        self.writer.add_scalar(f"train/{key}", value, entry["step"])
+                        self.writer.add_scalar(self._extra_scalar_tag(key), value, entry["step"])
                     if "step_avg_ms" in entry:
                         self.writer.add_scalar("perf/step_avg_ms", entry["step_avg_ms"], entry["step"])
                 self.writer.flush()
